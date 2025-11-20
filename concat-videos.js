@@ -72,6 +72,110 @@ function findMP4Files(directory) {
     }
 }
 
+// Fonction pour obtenir les informations complètes d'une vidéo
+function getVideoInfo(filePath) {
+    try {
+        const output = execSync(
+            `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name -of json "${filePath}"`,
+            { encoding: 'utf8' }
+        );
+        const data = JSON.parse(output);
+        const stream = data.streams[0];
+
+        // Calculer le framerate
+        let fps = 30; // valeur par défaut
+        if (stream.r_frame_rate) {
+            const [num, den] = stream.r_frame_rate.split('/').map(Number);
+            if (den && den !== 0) {
+                fps = Math.round(num / den);
+            }
+        }
+
+        return {
+            width: stream.width,
+            height: stream.height,
+            fps: fps,
+            codec: stream.codec_name
+        };
+    } catch (error) {
+        console.error(`❌ Erreur lors de la lecture des infos de ${path.basename(filePath)}:`, error.message);
+        return null;
+    }
+}
+
+// Fonction pour normaliser une vidéo (rotation + mise au même format)
+function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, needsRotation, index, total) {
+    return new Promise((resolve, reject) => {
+        const fileName = path.basename(inputPath);
+        const action = needsRotation ? 'Rotation et normalisation' : 'Normalisation';
+        console.log(`   🔧 ${action} de "${fileName}" (${index}/${total})...`);
+
+        // Construire le filtre vidéo
+        let vf = '';
+
+        // Si rotation nécessaire, ajouter transpose
+        if (needsRotation) {
+            vf = 'transpose=1,';
+        }
+
+        // Normaliser la résolution avec padding noir pour conserver le ratio
+        vf += `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
+
+        const ffmpegArgs = [
+            '-i', inputPath,
+            '-vf', vf,
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '48000',
+            '-y',
+            outputPath
+        ];
+
+        const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+        let lastProgress = '';
+
+        ffmpeg.stderr.on('data', (data) => {
+            const output = data.toString();
+            const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
+
+            if (timeMatch) {
+                const hours = parseInt(timeMatch[1]);
+                const minutes = parseInt(timeMatch[2]);
+                const seconds = parseInt(timeMatch[3]);
+                const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+                const progressLine = `      ⏳ ${formatDuration(totalSeconds)}`;
+
+                if (lastProgress) {
+                    process.stdout.write('\r' + ' '.repeat(lastProgress.length) + '\r');
+                }
+                process.stdout.write(progressLine);
+                lastProgress = progressLine;
+            }
+        });
+
+        ffmpeg.on('close', (code) => {
+            if (lastProgress) {
+                process.stdout.write('\r' + ' '.repeat(lastProgress.length) + '\r');
+            }
+
+            if (code === 0) {
+                console.log(`      ✅ Terminée`);
+                resolve();
+            } else {
+                reject(new Error(`FFmpeg s'est terminé avec le code ${code}`));
+            }
+        });
+
+        ffmpeg.on('error', (error) => {
+            reject(error);
+        });
+    });
+}
+
 // Fonction pour créer le fichier de concaténation
 function createConcatFile(files, directory) {
     const concatFilePath = path.join(directory, 'concat_list.txt');
@@ -177,10 +281,20 @@ function mergeVideos(concatFile, outputPath) {
 }
 
 // Fonction pour nettoyer les fichiers temporaires
-function cleanup(concatFile) {
+function cleanup(concatFile, normalizedFiles = []) {
     try {
         if (fs.existsSync(concatFile)) {
             fs.unlinkSync(concatFile);
+        }
+
+        // Nettoyer les fichiers normalisés temporaires
+        normalizedFiles.forEach(file => {
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+            }
+        });
+
+        if (concatFile || normalizedFiles.length > 0) {
             console.log('🧹 Fichiers temporaires nettoyés');
         }
     } catch (error) {
@@ -246,11 +360,108 @@ async function main() {
         console.log(`   ${index + 1}. ${file.name} (${dateStr})`);
     });
 
+    // Analyser toutes les vidéos pour obtenir leurs caractéristiques
+    console.log('\n🔍 Analyse des caractéristiques des vidéos...');
+    const videosToProcess = [];
+    let verticalCount = 0;
+    let maxWidth = 0;
+    let maxHeight = 0;
+    const fpsValues = [];
+
+    for (const file of mp4Files) {
+        const info = getVideoInfo(file.path);
+        if (!info) {
+            console.error(`❌ Impossible d'analyser ${file.name}`);
+            console.log('\n📝 Appuyez sur une touche pour quitter...');
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.once('data', () => process.exit(1));
+            return;
+        }
+
+        const isVertical = info.height > info.width;
+        if (isVertical) {
+            verticalCount++;
+            // Si verticale, on considère la largeur/hauteur après rotation pour la résolution max
+            maxWidth = Math.max(maxWidth, info.height);
+            maxHeight = Math.max(maxHeight, info.width);
+            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps) - Rotation nécessaire`);
+        } else {
+            maxWidth = Math.max(maxWidth, info.width);
+            maxHeight = Math.max(maxHeight, info.height);
+            console.log(`   🖥️  "${file.name}" - Horizontale (${info.width}x${info.height}, ${info.fps}fps)`);
+        }
+
+        fpsValues.push(info.fps);
+
+        videosToProcess.push({
+            ...file,
+            info,
+            isVertical
+        });
+    }
+
+    // Déterminer la résolution cible (on prend la plus grande, ou 1920x1080 si c'est plus petit)
+    let targetWidth = Math.max(maxWidth, 1920);
+    let targetHeight = Math.max(maxHeight, 1080);
+
+    // Si toutes les vidéos sont plus petites que 1920x1080, on utilise la plus grande résolution trouvée
+    if (maxWidth < 1920 && maxHeight < 1080) {
+        targetWidth = maxWidth;
+        targetHeight = maxHeight;
+    }
+
+    // Déterminer le FPS cible (le plus commun, ou 30 par défaut)
+    const fpsCount = {};
+    fpsValues.forEach(fps => {
+        fpsCount[fps] = (fpsCount[fps] || 0) + 1;
+    });
+    const targetFps = Object.keys(fpsCount).reduce((a, b) => fpsCount[a] > fpsCount[b] ? a : b, 30);
+
+    console.log(`\n📊 Résolution cible: ${targetWidth}x${targetHeight} à ${targetFps}fps`);
+
+    // Normaliser TOUTES les vidéos pour garantir la compatibilité
+    console.log(`\n🔧 Normalisation de ${mp4Files.length} vidéo(s) au même format...\n`);
+
+    const normalizedFiles = [];
+    let processedCount = 0;
+
+    for (const video of videosToProcess) {
+        processedCount++;
+        const normalizedPath = path.join(workingDir, `temp_normalized_${Date.now()}_${processedCount}.mp4`);
+        normalizedFiles.push(normalizedPath);
+
+        try {
+            await normalizeVideo(
+                video.path,
+                normalizedPath,
+                targetWidth,
+                targetHeight,
+                targetFps,
+                video.isVertical,
+                processedCount,
+                mp4Files.length
+            );
+            video.path = normalizedPath; // Utiliser le fichier normalisé
+        } catch (error) {
+            console.error(`\n❌ Erreur lors de la normalisation de ${video.name}:`, error.message);
+            cleanup(null, normalizedFiles);
+            console.log('\n📝 Appuyez sur une touche pour quitter...');
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.once('data', () => process.exit(1));
+            return;
+        }
+    }
+
+    console.log(`\n✅ Toutes les vidéos sont maintenant au même format (${targetWidth}x${targetHeight}, ${targetFps}fps)`);
+
     // Créer le fichier de concaténation
     console.log('\n📝 Création du fichier de concaténation...');
-    const concatFile = createConcatFile(mp4Files, workingDir);
+    const concatFile = createConcatFile(videosToProcess, workingDir);
     if (!concatFile) {
         console.error('❌ Impossible de créer le fichier de concaténation.');
+        cleanup(null, normalizedFiles);
         console.log('\n📝 Appuyez sur une touche pour quitter...');
         process.stdin.setRawMode(true);
         process.stdin.resume();
@@ -270,7 +481,7 @@ async function main() {
         console.log(`📦 Taille: ${getFileSize(outputPath)}`);
 
         // Nettoyer
-        cleanup(concatFile);
+        cleanup(concatFile, normalizedFiles);
 
         console.log('\n✨ Processus terminé avec succès!');
         console.log('\n📝 Appuyez sur une touche pour quitter...');
@@ -280,7 +491,7 @@ async function main() {
 
     } catch (error) {
         console.error('\n❌ Erreur lors de la fusion:', error.message);
-        cleanup(concatFile);
+        cleanup(concatFile, normalizedFiles);
         console.log('\n📝 Appuyez sur une touche pour quitter...');
         process.stdin.setRawMode(true);
         process.stdin.resume();
