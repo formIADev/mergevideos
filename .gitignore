@@ -8,7 +8,7 @@ dist/
 # Temporary files
 concat_list.txt
 output.mp4
-temp_rotated_*.mp4
+temp_normalized_*.mp4
 
 # Test videos
 *.mp4

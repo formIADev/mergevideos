@@ -6,10 +6,11 @@ Script Node.js pour fusionner et compresser automatiquement des fichiers vidéo 
 
 - ✅ Détection automatique de tous les fichiers MP4 dans le répertoire
 - 📅 Tri automatique par date de création (du plus ancien au plus récent)
+- 🔧 **Normalisation automatique de toutes les vidéos** (résolution, framerate, codec)
 - 🔄 **Rotation automatique des vidéos verticales en format horizontal**
 - 🎬 Fusion des vidéos en un seul fichier `output.mp4`
 - 🗜️ Compression H.264 avec qualité optimale (CRF 23, preset medium)
-- 🔊 Conservation de l'audio sans compression
+- 🔊 Audio AAC optimisé (192kbps, 48kHz)
 - 📊 Affichage de la progression en temps réel
 - 🧹 Nettoyage automatique des fichiers temporaires
 - 🛡️ Gestion des erreurs robuste
@@ -162,42 +163,65 @@ const ffmpegArgs = [
 - `23` : Qualité élevée (par défaut, recommandé)
 - `28` : Qualité moyenne, fichier plus petit
 
-## 🔄 Rotation Automatique des Vidéos
+## 🔄 Normalisation et Rotation Automatique des Vidéos
 
-Le script détecte automatiquement l'orientation de chaque vidéo et **garantit une sortie en format horizontal**.
+Le script **normalise automatiquement** toutes les vidéos pour garantir une compatibilité parfaite lors de la fusion, et **garantit une sortie en format horizontal**.
 
 ### Comment ça fonctionne ?
 
-1. **Analyse automatique** : Le script analyse les dimensions de chaque vidéo (largeur x hauteur)
-2. **Détection** : Si la hauteur est supérieure à la largeur, la vidéo est considérée comme verticale
-3. **Rotation** : Les vidéos verticales sont automatiquement tournées de 90° dans le sens horaire
-4. **Fusion** : Toutes les vidéos (originales horizontales + tournées) sont fusionnées en format horizontal
+1. **Analyse complète** : Le script analyse chaque vidéo (dimensions, framerate, codec)
+2. **Détection d'orientation** : Les vidéos verticales (hauteur > largeur) sont identifiées
+3. **Détermination des paramètres cibles** :
+   - Résolution : La plus grande résolution trouvée (minimum 1920x1080)
+   - FPS : Le framerate le plus commun parmi toutes les vidéos
+4. **Normalisation** : TOUTES les vidéos sont converties au même format :
+   - Rotation automatique des vidéos verticales (90° sens horaire)
+   - Mise à l'échelle avec padding noir pour conserver le ratio d'aspect
+   - Uniformisation du framerate
+   - Encodage H.264 avec audio AAC
+5. **Fusion** : Les vidéos normalisées sont fusionnées sans problème de compatibilité
 
 ### Exemple
 
 ```
 Entrée :
-- video1.mp4 (1920x1080) → Horizontale ✓
-- video2.mp4 (1080x1920) → Verticale → Rotation automatique 🔄
-- video3.mp4 (1280x720)  → Horizontale ✓
+- video1.mp4 (1920x1080, 30fps, h264) → Normalisée
+- video2.mp4 (1080x1920, 60fps, hevc) → Verticale + différent codec → Rotation + normalisation 🔄
+- video3.mp4 (1280x720, 25fps, h264)  → Différente résolution/fps → Normalisée
+
+Résolution cible déterminée : 1920x1080 à 30fps
 
 Sortie :
-- output.mp4 → 100% horizontal avec toutes les vidéos dans le bon sens
+- output.mp4 → 1920x1080, 30fps, 100% horizontal, parfaitement compatible
 ```
+
+### Pourquoi normaliser TOUTES les vidéos ?
+
+**Problème résolu** : Sans normalisation, si vos vidéos ont des caractéristiques différentes (résolution, codec, fps), seule la première vidéo s'affiche correctement, les autres sont noires ou ne fonctionnent pas.
+
+La normalisation garantit que toutes les vidéos ont :
+- ✅ Même résolution
+- ✅ Même framerate
+- ✅ Même codec vidéo (H.264)
+- ✅ Même codec audio (AAC)
+- ✅ Même format de pixel (yuv420p)
 
 ### Avantages
 
+- ✅ **Compatibilité garantie** : Fusionne des vidéos de sources différentes sans problème
 - ✅ **Automatique** : Aucune intervention manuelle nécessaire
-- ✅ **Intelligent** : Seules les vidéos verticales sont transformées
-- ✅ **Cohérent** : Sortie garantie en format paysage
+- ✅ **Intelligent** : Détecte automatiquement les meilleurs paramètres
+- ✅ **Cohérent** : Sortie garantie en format paysage uniforme
 - ✅ **Propre** : Les fichiers temporaires sont automatiquement supprimés
 
 ### Notes techniques
 
 - La rotation utilise le filtre FFmpeg `transpose=1` (90° sens horaire)
+- Le scaling utilise `scale` avec `pad` pour ajouter des bandes noires si nécessaire
 - Les fichiers originaux ne sont jamais modifiés
-- Les vidéos tournées sont stockées temporairement puis supprimées après la fusion
-- L'audio est conservé sans modification
+- Les vidéos normalisées sont stockées temporairement puis supprimées après la fusion
+- Encodage vidéo : H.264, CRF 23, preset medium
+- Encodage audio : AAC, 192kbps, 48kHz
 
 ## 🐛 Dépannage
 
