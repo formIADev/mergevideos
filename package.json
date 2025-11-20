@@ -1,0 +1,38 @@
+{
+  "name": "concat-videos",
+  "version": "1.0.0",
+  "description": "Fusion et compression de vidéos MP4 avec FFmpeg",
+  "main": "concat-videos.js",
+  "scripts": {
+    "start": "node concat-videos.js",
+    "build": "pkg . --targets node18-win-x64 --output dist/concat-videos.exe",
+    "build:all": "pkg . --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --out-path dist"
+  },
+  "keywords": [
+    "video",
+    "merge",
+    "concat",
+    "ffmpeg",
+    "mp4",
+    "compression"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bin": "concat-videos.js",
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist",
+    "scripts": [
+      "concat-videos.js"
+    ],
+    "assets": []
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
