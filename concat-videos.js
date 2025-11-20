@@ -257,7 +257,7 @@ function mergeVideos(concatFile, outputPath) {
             outputPath
         ];
 
-        const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+        const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
         let lastProgress = '';
 
