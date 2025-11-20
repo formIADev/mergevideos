@@ -436,15 +436,9 @@ async function main() {
         });
     }
 
-    // Déterminer la résolution cible (on prend la plus grande, ou 1920x1080 si c'est plus petit)
-    let targetWidth = Math.max(maxWidth, 1920);
-    let targetHeight = Math.max(maxHeight, 1080);
-
-    // Si toutes les vidéos sont plus petites que 1920x1080, on utilise la plus grande résolution trouvée
-    if (maxWidth < 1920 && maxHeight < 1080) {
-        targetWidth = maxWidth;
-        targetHeight = maxHeight;
-    }
+    // Forcer la résolution cible à 1920x1080 (format horizontal)
+    const targetWidth = 1920;
+    const targetHeight = 1080;
 
     // Déterminer le FPS cible (le plus commun, ou 30 par défaut)
     const fpsCount = {};
