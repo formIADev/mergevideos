@@ -145,7 +145,7 @@ const ffmpegArgs = [
     '-i', concatFile,
     '-c:v', 'libx264',
     '-preset', 'medium',    // Options : ultrafast, fast, medium, slow, veryslow
-    '-crf', '23',           // Valeur : 0-51 (18=haute qualité, 28=qualité moyenne)
+    '-crf', '18',           // Valeur : 0-51 (18=haute qualité, 28=qualité moyenne)
     '-c:a', 'copy',
     '-y',
     outputPath

@@ -130,7 +130,7 @@ function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, target
             '-filter_complex', vf,
             '-c:v', 'libx264',
             '-preset', 'medium',
-            '-crf', '23',
+            '-crf', '18',
             '-c:a', 'aac',
             '-b:a', '192k',
             '-ar', '48000',
@@ -220,7 +220,7 @@ function mergeVideos(concatFile, outputPath) {
             '-i', concatFile,
             '-c:v', 'libx264',
             '-preset', 'medium',
-            '-crf', '23',
+            '-crf', '18',
             '-c:a', 'copy',
             '-y',
             outputPath
