@@ -103,18 +103,31 @@ function getVideoInfo(filePath) {
     }
 }
 
-// Fonction pour normaliser une vidéo (mise au même format sans rotation)
-function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, index, total) {
+// Fonction pour normaliser une vidéo (avec fond flou pour les vidéos verticales)
+function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, isVertical, index, total) {
     return new Promise((resolve, reject) => {
         const fileName = path.basename(inputPath);
-        console.log(`   🔧 Normalisation de "${fileName}" (${index}/${total})...`);
+        const action = isVertical ? 'Normalisation avec fond flou' : 'Normalisation';
+        console.log(`   🔧 ${action} de "${fileName}" (${index}/${total})...`);
 
-        // Normaliser la résolution avec padding noir pour conserver le ratio et l'orientation
-        const vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
+        let vf;
+
+        if (isVertical) {
+            // Pour les vidéos verticales : effet fond flou style TikTok/YouTube
+            // 1. Créer le fond : agrandir et flouter
+            // 2. Créer le premier plan : redimensionner pour s'adapter
+            // 3. Superposer le premier plan centré sur le fond
+            vf = `[0:v]scale=${targetWidth}:-1:flags=bicubic,boxblur=20:1[bg];` +
+                 `[0:v]scale=-1:${targetHeight}:flags=bicubic[fg];` +
+                 `[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=${targetFps},format=yuv420p`;
+        } else {
+            // Pour les vidéos horizontales : padding noir classique
+            vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
+        }
 
         const ffmpegArgs = [
             '-i', inputPath,
-            '-vf', vf,
+            '-filter_complex', vf,
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -377,7 +390,7 @@ async function main() {
 
         if (isVertical) {
             verticalCount++;
-            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps)`);
+            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps) - Fond flou activé`);
         } else {
             console.log(`   🖥️  "${file.name}" - Horizontale (${info.width}x${info.height}, ${info.fps}fps)`);
         }
@@ -428,6 +441,7 @@ async function main() {
                 targetWidth,
                 targetHeight,
                 targetFps,
+                video.isVertical,
                 processedCount,
                 mp4Files.length
             );

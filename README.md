@@ -7,6 +7,7 @@ Script Node.js pour fusionner et compresser automatiquement des fichiers vidéo 
 - ✅ Détection automatique de tous les fichiers MP4 dans le répertoire
 - 📅 Tri automatique par date de création (du plus ancien au plus récent)
 - 🔧 **Normalisation automatique de toutes les vidéos** (résolution, framerate, codec)
+- 🎨 **Fond flou automatique pour vidéos verticales** (style TikTok/YouTube)
 - 📐 **Préserve l'orientation originale** (verticale ou horizontale)
 - 🎬 Fusion des vidéos en un seul fichier `output.mp4`
 - 🗜️ Compression H.264 avec qualité optimale (CRF 23, preset medium)
@@ -175,32 +176,108 @@ Le script **normalise automatiquement** toutes les vidéos pour garantir une com
    - Résolution : La plus grande largeur ET la plus grande hauteur trouvées (minimum 1920x1080)
    - FPS : Le framerate le plus commun parmi toutes les vidéos
 4. **Normalisation** : TOUTES les vidéos sont converties au même format :
-   - **Préservation de l'orientation** : Les vidéos verticales restent verticales, les horizontales restent horizontales
-   - Mise à l'échelle avec padding noir pour conserver le ratio d'aspect original
+   - **Vidéos verticales** : Fond flou automatique (style TikTok/YouTube) + vidéo centrée
+   - **Vidéos horizontales** : Padding noir classique pour conserver le ratio d'aspect
    - Uniformisation du framerate
    - Encodage H.264 avec audio AAC
 5. **Fusion** : Les vidéos normalisées sont fusionnées sans problème de compatibilité
 
-### Exemple
+## 🎨 Effet Fond Flou pour Vidéos Verticales
+
+Les vidéos verticales (format smartphone) bénéficient automatiquement d'un **effet de fond flou** professionnel, identique à celui utilisé sur TikTok et YouTube.
+
+### Comment ça fonctionne ?
+
+Pour chaque vidéo verticale, le script crée automatiquement :
+
+1. **Le fond (background)** :
+   - La vidéo est agrandie pour remplir toute la largeur de la résolution cible
+   - Un flou gaussien intense (blur 20) est appliqué
+   - Résultat : Un fond esthétique qui reprend les couleurs de la vidéo
+
+2. **Le premier plan (foreground)** :
+   - La vidéo originale est redimensionnée pour s'adapter à la hauteur cible
+   - Elle reste nette et non déformée
+   - Son ratio d'aspect est parfaitement préservé
+
+3. **La composition** :
+   - Le premier plan est superposé centré sur le fond flou
+   - Résultat : Une vidéo au format horizontal avec la vidéo verticale centrée sur son propre fond flouté
+
+### Exemple visuel
+
+```
+Avant (vidéo verticale 1080x1920) :
+┌────────┐
+│        │
+│ Vidéo  │
+│ Vertic.│
+│        │
+└────────┘
+
+Après (sortie horizontale 1920x1080 avec fond flou) :
+┌──────────────────────────────────────────┐
+│ [Fond flou]  ┌────────┐  [Fond flou]    │
+│ [de la vidéo]│        │  [de la vidéo]  │
+│ [agrandie]   │ Vidéo  │  [agrandie]     │
+│ [et floutée] │ Vertic.│  [et floutée]   │
+│              │        │                  │
+│              └────────┘                  │
+└──────────────────────────────────────────┘
+```
+
+### Paramètres FFmpeg utilisés
+
+Le script utilise un filtre complexe FFmpeg :
+
+```bash
+# Créer le fond flou
+[0:v]scale=1920:-1:flags=bicubic,boxblur=20:1[bg]
+
+# Préparer la vidéo originale
+[0:v]scale=-1:1080:flags=bicubic[fg]
+
+# Superposer la vidéo centrée sur le fond
+[bg][fg]overlay=(W-w)/2:(H-h)/2
+```
+
+- `scale=1920:-1` : Agrandit la vidéo à la largeur cible (auto-hauteur)
+- `boxblur=20:1` : Applique un flou gaussien avec rayon 20
+- `scale=-1:1080` : Redimensionne la vidéo originale à la hauteur cible (auto-largeur)
+- `overlay=(W-w)/2:(H-h)/2` : Centre la vidéo horizontalement et verticalement
+
+### Avantages
+
+- ✅ **Professionnel** : Rendu identique aux vidéos TikTok/YouTube
+- ✅ **Automatique** : Aucune configuration nécessaire
+- ✅ **Esthétique** : Le fond reprend les couleurs de la vidéo
+- ✅ **Pas de distorsion** : La vidéo originale garde son ratio exact
+- ✅ **Remplissage intelligent** : Pas de bandes noires disgracieuses
+
+### Exemple complet
 
 ```
 Entrée :
-- video1.mp4 (1920x1080, 30fps, h264) horizontale → Normalisée (reste horizontale)
-- video2.mp4 (1080x1920, 60fps, hevc) verticale → Normalisée (reste verticale avec padding)
-- video3.mp4 (1280x720, 25fps, h264) horizontale → Normalisée (reste horizontale)
+- video1.mp4 (1920x1080, 30fps, h264) horizontale → Normalisée (padding noir)
+- video2.mp4 (1080x1920, 60fps, hevc) verticale → Fond flou automatique appliqué 🎨
+- video3.mp4 (1280x720, 25fps, h264) horizontale → Normalisée (padding noir)
 
 maxWidth = 1920, maxHeight = 1920
 → Résolution cible : 1920x1920 à 30fps
 
 Sortie :
-- output.mp4 → Toutes les vidéos préservent leur orientation avec du padding noir si nécessaire
+- output.mp4 →
+  * video1 : horizontale avec padding noir en haut/bas
+  * video2 : verticale centrée sur fond flou de la même vidéo
+  * video3 : horizontale avec padding noir en haut/bas
 ```
 
 ### Gestion des Orientations Mixtes
 
 Lorsque vous mélangez des vidéos verticales et horizontales :
 - La résolution cible sera **carrée** ou **rectangulaire** selon la plus grande dimension trouvée
-- Les vidéos plus petites auront des **bandes noires** (letterbox/pillarbox) pour s'adapter
+- Les vidéos **verticales** ont un **fond flou** (pas de bandes noires)
+- Les vidéos **horizontales** ont des **bandes noires** (letterbox/pillarbox) classiques
 - Chaque vidéo **conserve son ratio d'aspect et son orientation originale**
 
 ### Pourquoi normaliser TOUTES les vidéos ?
@@ -225,12 +302,14 @@ La normalisation garantit que toutes les vidéos ont :
 
 ### Notes techniques
 
-- Le scaling utilise `scale` avec `pad` pour ajouter des bandes noires si nécessaire
+- **Vidéos verticales** : Utilise un filtre complexe FFmpeg avec `scale`, `boxblur` et `overlay`
+- **Vidéos horizontales** : Utilise `scale` avec `pad` pour ajouter des bandes noires
 - Les fichiers originaux ne sont jamais modifiés
 - Les vidéos normalisées sont stockées temporairement puis supprimées après la fusion
 - Encodage vidéo : H.264, CRF 23, preset medium
 - Encodage audio : AAC, 192kbps, 48kHz
-- Padding centré horizontalement et verticalement
+- Fond flou : rayon 20, algorithme bicubic pour le scaling
+- Padding/overlay centré horizontalement et verticalement
 
 ## 🐛 Dépannage
 
