@@ -103,27 +103,31 @@ function getVideoInfo(filePath) {
     }
 }
 
-// Fonction pour normaliser une vidéo (rotation + mise au même format)
-function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, needsRotation, index, total) {
+// Fonction pour normaliser une vidéo (avec fond flou pour les vidéos verticales)
+function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, isVertical, index, total) {
     return new Promise((resolve, reject) => {
         const fileName = path.basename(inputPath);
-        const action = needsRotation ? 'Rotation et normalisation' : 'Normalisation';
+        const action = isVertical ? 'Normalisation avec fond flou' : 'Normalisation';
         console.log(`   🔧 ${action} de "${fileName}" (${index}/${total})...`);
 
-        // Construire le filtre vidéo
-        let vf = '';
+        let vf;
 
-        // Si rotation nécessaire, ajouter transpose
-        if (needsRotation) {
-            vf = 'transpose=1,';
+        if (isVertical) {
+            // Pour les vidéos verticales : effet fond flou style TikTok/YouTube
+            // 1. Créer le fond : agrandir et flouter
+            // 2. Créer le premier plan : redimensionner pour s'adapter
+            // 3. Superposer le premier plan centré sur le fond
+            vf = `[0:v]scale=${targetWidth}:-1:flags=bicubic,boxblur=20:1[bg];` +
+                 `[0:v]scale=-1:${targetHeight}:flags=bicubic[fg];` +
+                 `[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=${targetFps},format=yuv420p`;
+        } else {
+            // Pour les vidéos horizontales : padding noir classique
+            vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
         }
-
-        // Normaliser la résolution avec padding noir pour conserver le ratio
-        vf += `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
 
         const ffmpegArgs = [
             '-i', inputPath,
-            '-vf', vf,
+            '-filter_complex', vf,
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -380,15 +384,14 @@ async function main() {
         }
 
         const isVertical = info.height > info.width;
+        // Toujours utiliser les dimensions réelles (pas de rotation)
+        maxWidth = Math.max(maxWidth, info.width);
+        maxHeight = Math.max(maxHeight, info.height);
+
         if (isVertical) {
             verticalCount++;
-            // Si verticale, on considère la largeur/hauteur après rotation pour la résolution max
-            maxWidth = Math.max(maxWidth, info.height);
-            maxHeight = Math.max(maxHeight, info.width);
-            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps) - Rotation nécessaire`);
+            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps) - Fond flou activé`);
         } else {
-            maxWidth = Math.max(maxWidth, info.width);
-            maxHeight = Math.max(maxHeight, info.height);
             console.log(`   🖥️  "${file.name}" - Horizontale (${info.width}x${info.height}, ${info.fps}fps)`);
         }
 
