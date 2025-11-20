@@ -72,6 +72,78 @@ function findMP4Files(directory) {
     }
 }
 
+// Fonction pour obtenir les dimensions d'une vidéo
+function getVideoDimensions(filePath) {
+    try {
+        const output = execSync(
+            `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${filePath}"`,
+            { encoding: 'utf8' }
+        );
+        const [width, height] = output.trim().split('x').map(Number);
+        return { width, height };
+    } catch (error) {
+        console.error(`❌ Erreur lors de la lecture des dimensions de ${path.basename(filePath)}:`, error.message);
+        return null;
+    }
+}
+
+// Fonction pour tourner une vidéo verticale en horizontale
+function rotateVideo(inputPath, outputPath, index, total) {
+    return new Promise((resolve, reject) => {
+        const fileName = path.basename(inputPath);
+        console.log(`   🔄 Rotation de "${fileName}" (${index}/${total})...`);
+
+        // Utiliser transpose=1 pour rotation 90° sens horaire
+        const ffmpegArgs = [
+            '-i', inputPath,
+            '-vf', 'transpose=1',
+            '-c:a', 'copy',
+            '-y',
+            outputPath
+        ];
+
+        const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+        let lastProgress = '';
+
+        ffmpeg.stderr.on('data', (data) => {
+            const output = data.toString();
+            const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
+
+            if (timeMatch) {
+                const hours = parseInt(timeMatch[1]);
+                const minutes = parseInt(timeMatch[2]);
+                const seconds = parseInt(timeMatch[3]);
+                const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+                const progressLine = `      ⏳ ${formatDuration(totalSeconds)}`;
+
+                if (lastProgress) {
+                    process.stdout.write('\r' + ' '.repeat(lastProgress.length) + '\r');
+                }
+                process.stdout.write(progressLine);
+                lastProgress = progressLine;
+            }
+        });
+
+        ffmpeg.on('close', (code) => {
+            if (lastProgress) {
+                process.stdout.write('\r' + ' '.repeat(lastProgress.length) + '\r');
+            }
+
+            if (code === 0) {
+                console.log(`      ✅ Rotation terminée`);
+                resolve();
+            } else {
+                reject(new Error(`FFmpeg s'est terminé avec le code ${code}`));
+            }
+        });
+
+        ffmpeg.on('error', (error) => {
+            reject(error);
+        });
+    });
+}
+
 // Fonction pour créer le fichier de concaténation
 function createConcatFile(files, directory) {
     const concatFilePath = path.join(directory, 'concat_list.txt');
@@ -177,10 +249,20 @@ function mergeVideos(concatFile, outputPath) {
 }
 
 // Fonction pour nettoyer les fichiers temporaires
-function cleanup(concatFile) {
+function cleanup(concatFile, rotatedFiles = []) {
     try {
         if (fs.existsSync(concatFile)) {
             fs.unlinkSync(concatFile);
+        }
+
+        // Nettoyer les fichiers de rotation temporaires
+        rotatedFiles.forEach(file => {
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+            }
+        });
+
+        if (concatFile || rotatedFiles.length > 0) {
             console.log('🧹 Fichiers temporaires nettoyés');
         }
     } catch (error) {
@@ -246,11 +328,75 @@ async function main() {
         console.log(`   ${index + 1}. ${file.name} (${dateStr})`);
     });
 
+    // Analyser l'orientation des vidéos et préparer la rotation si nécessaire
+    console.log('\n🔍 Analyse de l\'orientation des vidéos...');
+    const videosToProcess = [];
+    const rotatedFiles = [];
+    let verticalCount = 0;
+
+    for (const file of mp4Files) {
+        const dimensions = getVideoDimensions(file.path);
+        if (!dimensions) {
+            console.error(`❌ Impossible d'analyser ${file.name}`);
+            console.log('\n📝 Appuyez sur une touche pour quitter...');
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.once('data', () => process.exit(1));
+            return;
+        }
+
+        const isVertical = dimensions.height > dimensions.width;
+        if (isVertical) {
+            verticalCount++;
+            console.log(`   📱 "${file.name}" - Verticale (${dimensions.width}x${dimensions.height}) - Rotation nécessaire`);
+        } else {
+            console.log(`   🖥️  "${file.name}" - Horizontale (${dimensions.width}x${dimensions.height})`);
+        }
+
+        videosToProcess.push({
+            ...file,
+            isVertical,
+            dimensions
+        });
+    }
+
+    // Rotation des vidéos verticales
+    if (verticalCount > 0) {
+        console.log(`\n🔄 Rotation de ${verticalCount} vidéo(s) verticale(s) en format horizontal...\n`);
+
+        let rotatedCount = 0;
+        for (const video of videosToProcess) {
+            if (video.isVertical) {
+                rotatedCount++;
+                const rotatedPath = path.join(workingDir, `temp_rotated_${Date.now()}_${rotatedCount}.mp4`);
+                rotatedFiles.push(rotatedPath);
+
+                try {
+                    await rotateVideo(video.path, rotatedPath, rotatedCount, verticalCount);
+                    video.path = rotatedPath; // Utiliser le fichier tourné
+                } catch (error) {
+                    console.error(`\n❌ Erreur lors de la rotation de ${video.name}:`, error.message);
+                    cleanup(null, rotatedFiles);
+                    console.log('\n📝 Appuyez sur une touche pour quitter...');
+                    process.stdin.setRawMode(true);
+                    process.stdin.resume();
+                    process.stdin.once('data', () => process.exit(1));
+                    return;
+                }
+            }
+        }
+
+        console.log(`\n✅ Toutes les vidéos sont maintenant en format horizontal`);
+    } else {
+        console.log('✅ Toutes les vidéos sont déjà en format horizontal');
+    }
+
     // Créer le fichier de concaténation
     console.log('\n📝 Création du fichier de concaténation...');
-    const concatFile = createConcatFile(mp4Files, workingDir);
+    const concatFile = createConcatFile(videosToProcess, workingDir);
     if (!concatFile) {
         console.error('❌ Impossible de créer le fichier de concaténation.');
+        cleanup(null, rotatedFiles);
         console.log('\n📝 Appuyez sur une touche pour quitter...');
         process.stdin.setRawMode(true);
         process.stdin.resume();
@@ -270,7 +416,7 @@ async function main() {
         console.log(`📦 Taille: ${getFileSize(outputPath)}`);
 
         // Nettoyer
-        cleanup(concatFile);
+        cleanup(concatFile, rotatedFiles);
 
         console.log('\n✨ Processus terminé avec succès!');
         console.log('\n📝 Appuyez sur une touche pour quitter...');
@@ -280,7 +426,7 @@ async function main() {
 
     } catch (error) {
         console.error('\n❌ Erreur lors de la fusion:', error.message);
-        cleanup(concatFile);
+        cleanup(concatFile, rotatedFiles);
         console.log('\n📝 Appuyez sur une touche pour quitter...');
         process.stdin.setRawMode(true);
         process.stdin.resume();

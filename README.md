@@ -6,6 +6,7 @@ Script Node.js pour fusionner et compresser automatiquement des fichiers vidéo 
 
 - ✅ Détection automatique de tous les fichiers MP4 dans le répertoire
 - 📅 Tri automatique par date de création (du plus ancien au plus récent)
+- 🔄 **Rotation automatique des vidéos verticales en format horizontal**
 - 🎬 Fusion des vidéos en un seul fichier `output.mp4`
 - 🗜️ Compression H.264 avec qualité optimale (CRF 23, preset medium)
 - 🔊 Conservation de l'audio sans compression
@@ -133,7 +134,7 @@ Le script utilise les paramètres FFmpeg suivants :
 
 ### Modifier les paramètres
 
-Pour ajuster la qualité ou la vitesse, éditez `concat-videos.js` ligne 125 :
+Pour ajuster la qualité ou la vitesse, éditez les paramètres FFmpeg dans `concat-videos.js` (fonction `mergeVideos`) :
 
 ```javascript
 const ffmpegArgs = [
@@ -160,6 +161,43 @@ const ffmpegArgs = [
 - `18` : Qualité visuelle très élevée
 - `23` : Qualité élevée (par défaut, recommandé)
 - `28` : Qualité moyenne, fichier plus petit
+
+## 🔄 Rotation Automatique des Vidéos
+
+Le script détecte automatiquement l'orientation de chaque vidéo et **garantit une sortie en format horizontal**.
+
+### Comment ça fonctionne ?
+
+1. **Analyse automatique** : Le script analyse les dimensions de chaque vidéo (largeur x hauteur)
+2. **Détection** : Si la hauteur est supérieure à la largeur, la vidéo est considérée comme verticale
+3. **Rotation** : Les vidéos verticales sont automatiquement tournées de 90° dans le sens horaire
+4. **Fusion** : Toutes les vidéos (originales horizontales + tournées) sont fusionnées en format horizontal
+
+### Exemple
+
+```
+Entrée :
+- video1.mp4 (1920x1080) → Horizontale ✓
+- video2.mp4 (1080x1920) → Verticale → Rotation automatique 🔄
+- video3.mp4 (1280x720)  → Horizontale ✓
+
+Sortie :
+- output.mp4 → 100% horizontal avec toutes les vidéos dans le bon sens
+```
+
+### Avantages
+
+- ✅ **Automatique** : Aucune intervention manuelle nécessaire
+- ✅ **Intelligent** : Seules les vidéos verticales sont transformées
+- ✅ **Cohérent** : Sortie garantie en format paysage
+- ✅ **Propre** : Les fichiers temporaires sont automatiquement supprimés
+
+### Notes techniques
+
+- La rotation utilise le filtre FFmpeg `transpose=1` (90° sens horaire)
+- Les fichiers originaux ne sont jamais modifiés
+- Les vidéos tournées sont stockées temporairement puis supprimées après la fusion
+- L'audio est conservé sans modification
 
 ## 🐛 Dépannage
 
