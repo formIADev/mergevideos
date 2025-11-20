@@ -232,7 +232,7 @@ Le script utilise un filtre complexe FFmpeg :
 
 ```bash
 # Créer le fond flou
-[0:v]scale=1920:-1:flags=bicubic,boxblur=20:1[bg]
+[0:v]scale=1920:-1:flags=bicubic,boxblur=30:2[bg]
 
 # Préparer la vidéo originale
 [0:v]scale=-1:1080:flags=bicubic[fg]
@@ -242,7 +242,7 @@ Le script utilise un filtre complexe FFmpeg :
 ```
 
 - `scale=1920:-1` : Agrandit la vidéo à la largeur cible (auto-hauteur)
-- `boxblur=20:1` : Applique un flou gaussien avec rayon 20
+- `boxblur=30:2` : Applique un flou gaussien avec rayon 30
 - `scale=-1:1080` : Redimensionne la vidéo originale à la hauteur cible (auto-largeur)
 - `overlay=(W-w)/2:(H-h)/2` : Centre la vidéo horizontalement et verticalement
 

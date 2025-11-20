@@ -117,7 +117,7 @@ function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, target
             // 1. Créer le fond : redimensionner à la hauteur puis agrandir/crop pour remplir, puis flouter
             // 2. Créer le premier plan : redimensionner à la hauteur en gardant le ratio d'aspect
             // 3. Superposer le premier plan centré sur le fond
-            vf = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},boxblur=20:1[bg];` +
+            vf = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},boxblur=30:2[bg];` +
                  `[0:v]scale=-1:${targetHeight}:flags=bicubic[fg];` +
                  `[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=${targetFps},format=yuv420p`;
         } else {
