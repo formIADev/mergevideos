@@ -103,23 +103,14 @@ function getVideoInfo(filePath) {
     }
 }
 
-// Fonction pour normaliser une vidéo (rotation + mise au même format)
-function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, needsRotation, index, total) {
+// Fonction pour normaliser une vidéo (mise au même format sans rotation)
+function normalizeVideo(inputPath, outputPath, targetWidth, targetHeight, targetFps, index, total) {
     return new Promise((resolve, reject) => {
         const fileName = path.basename(inputPath);
-        const action = needsRotation ? 'Rotation et normalisation' : 'Normalisation';
-        console.log(`   🔧 ${action} de "${fileName}" (${index}/${total})...`);
+        console.log(`   🔧 Normalisation de "${fileName}" (${index}/${total})...`);
 
-        // Construire le filtre vidéo
-        let vf = '';
-
-        // Si rotation nécessaire, ajouter transpose
-        if (needsRotation) {
-            vf = 'transpose=1,';
-        }
-
-        // Normaliser la résolution avec padding noir pour conserver le ratio
-        vf += `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
+        // Normaliser la résolution avec padding noir pour conserver le ratio et l'orientation
+        const vf = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps},format=yuv420p`;
 
         const ffmpegArgs = [
             '-i', inputPath,
@@ -380,15 +371,14 @@ async function main() {
         }
 
         const isVertical = info.height > info.width;
+        // Toujours utiliser les dimensions réelles (pas de rotation)
+        maxWidth = Math.max(maxWidth, info.width);
+        maxHeight = Math.max(maxHeight, info.height);
+
         if (isVertical) {
             verticalCount++;
-            // Si verticale, on considère la largeur/hauteur après rotation pour la résolution max
-            maxWidth = Math.max(maxWidth, info.height);
-            maxHeight = Math.max(maxHeight, info.width);
-            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps) - Rotation nécessaire`);
+            console.log(`   📱 "${file.name}" - Verticale (${info.width}x${info.height}, ${info.fps}fps)`);
         } else {
-            maxWidth = Math.max(maxWidth, info.width);
-            maxHeight = Math.max(maxHeight, info.height);
             console.log(`   🖥️  "${file.name}" - Horizontale (${info.width}x${info.height}, ${info.fps}fps)`);
         }
 
@@ -438,7 +428,6 @@ async function main() {
                 targetWidth,
                 targetHeight,
                 targetFps,
-                video.isVertical,
                 processedCount,
                 mp4Files.length
             );
